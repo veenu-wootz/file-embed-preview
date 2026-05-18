@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>File Viewer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #1a1a1a;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── PDF viewer: full-viewport div ── */
+    #adobe-dc-view {
+      display: none;
+      width: 100%;
+      height: 100vh;
+    }
+
+    /* ── Image viewer ── */
+    #image-viewer {
+      display: none;
+      width: 100%;
+      min-height: 100vh;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    #image-viewer.active {
+      display: flex;
+    }
+
+    #image-viewer img {
+      max-width: 100%;
+      max-height: 95vh;
+      height: auto;
+      width: auto;
+      display: block;
+      border-radius: 4px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+    }
+
+    /* ── Error / status states ── */
+    #status {
+      display: none;
+      width: 100%;
+      min-height: 100vh;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 12px;
+      color: #ccc;
+      text-align: center;
+      padding: 32px;
+    }
+
+    #status.active { display: flex; }
+
+    #status .icon {
+      font-size: 48px;
+      opacity: 0.5;
+    }
+
+    #status .title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #eee;
+    }
+
+    #status .detail {
+      font-size: 14px;
+      opacity: 0.6;
+      max-width: 400px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="adobe-dc-view"></div>
+
+  <div id="image-viewer">
+    <img id="preview-img" src="" alt="" />
+  </div>
+
+  <div id="status">
+    <div class="icon" id="status-icon">warning</div>
+    <div class="title" id="status-title">Something went wrong</div>
+    <div class="detail" id="status-detail"></div>
+  </div>
+
+  <script>
+    (function () {
+      var IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'avif', 'tiff', 'tif', 'ico'];
+      var PDF_EXTENSIONS   = ['pdf'];
+
+      // ── Helpers ──────────────────────────────────────────────────────────────
+
+      function param(name) {
+        return new URLSearchParams(window.location.search).get(name) || '';
+      }
+
+      function getExtension(url) {
+        try {
+          var path = new URL(url).pathname;
+          var ext  = path.split('.').pop().toLowerCase();
+          return ext;
+        } catch (e) {
+          return '';
+        }
+      }
+
+      function showStatus(icon, title, detail) {
+        document.getElementById('status-icon').textContent  = icon;
+        document.getElementById('status-title').textContent = title;
+        document.getElementById('status-detail').textContent = detail;
+        document.getElementById('status').classList.add('active');
+      }
+
+      // ── Renderers ────────────────────────────────────────────────────────────
+
+      function renderImage(url, name) {
+        var viewer = document.getElementById('image-viewer');
+        var img    = document.getElementById('preview-img');
+
+        img.alt = name || 'Preview';
+        img.src = url;
+        viewer.classList.add('active');
+
+        img.onerror = function () {
+          viewer.classList.remove('active');
+          showStatus('image', 'Image could not be loaded', 'The file at the provided URL was unreachable or returned an error.');
+        };
+      }
+
+      function renderPDF(url, name) {
+        var safeName = name || 'Document';
+        if (!safeName.toLowerCase().endsWith('.pdf')) {
+          safeName = safeName + '.pdf';
+        }
+
+        var adobeDiv = document.getElementById('adobe-dc-view');
+        adobeDiv.style.display = 'block';
+
+        document.addEventListener('adobe_dc_view_sdk.ready', function () {
+          var adobeDCView = new AdobeDC.View({
+            clientId: '7cbba0f3cdbe4ac48eb38b6bcea111f2',
+            divId:    'adobe-dc-view'
+          });
+
+          adobeDCView.previewFile(
+            {
+              content:  { location: { url: url } },
+              metaData: { fileName: safeName }
+            },
+            { defaultViewMode: 'FIT_WIDTH' }
+          );
+        });
+
+        var script = document.createElement('script');
+        script.src = 'https://acrobatservices.adobe.com/view-sdk/viewer.js';
+        document.head.appendChild(script);
+      }
+
+      // ── Main ─────────────────────────────────────────────────────────────────
+
+      function init() {
+        var fileUrl  = param('file_url');
+        var fileName = param('file_name');
+
+        if (!fileUrl) {
+          showStatus('missing', 'No file URL provided', 'Add ?file_url=... to the URL. Optionally include &file_name=... for a display label.');
+          return;
+        }
+
+        try { new URL(fileUrl); } catch (e) {
+          showStatus('invalid', 'Invalid URL', 'The value of file_url could not be parsed as a valid URL.');
+          return;
+        }
+
+        var ext = getExtension(fileUrl);
+
+        if (PDF_EXTENSIONS.indexOf(ext) !== -1) {
+          renderPDF(fileUrl, fileName);
+        } else if (IMAGE_EXTENSIONS.indexOf(ext) !== -1) {
+          renderImage(fileUrl, fileName);
+        } else {
+          showStatus(
+            'unsupported',
+            ext ? 'Unsupported file type: .' + ext : 'Unknown file type',
+            'This viewer supports PDF and common image formats (JPG, PNG, GIF, WebP, SVG, AVIF, BMP, TIFF). Check your file_url parameter.'
+          );
+        }
+      }
+
+      init();
+    })();
+  </script>
+
+</body>
+</html>
